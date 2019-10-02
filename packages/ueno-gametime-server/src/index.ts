@@ -1,5 +1,6 @@
 import * as knx from 'knx';
 import { PS4 } from './devices/ps4';
+import bodyParser from 'body-parser';
 import express from 'express';
 import { ProjectorScreen } from './devices/projector-screen';
 import { Projector } from './devices/projector';
@@ -11,8 +12,9 @@ const config = {
   projectorScreenAddress: '0/3/6',
   ps4Address: '192.168.1.70',
   games: {
-    FIFA19: 'CUSA11599_0',
-    FIFA20: 'CUSA15545',
+    fifa19: 'CUSA11599_0',
+    fifa20: 'CUSA15545',
+    fifa: '',
   },
   ps4AuthToken: {
     'client-type': 'a',
@@ -25,6 +27,9 @@ const config = {
 
   port: 5000,
 };
+
+// alias games
+config.games.fifa = config.games.fifa20;
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -49,6 +54,8 @@ async function init() {
   const projector = new Projector();
 
   const app = express();
+  app.use(bodyParser.json());
+  app.use(bodyParser.urlencoded({ extended: true }));
 
   app.use(async (req, res, next) => {
     (req as any).knx = await initKnx();
@@ -66,6 +73,30 @@ async function init() {
 
   app.post('/gametime', gametime(ps4, projectorScreen, projector, config.games));
   app.post('/worktime', worktime(ps4, projector, projectorScreen));
+  app.post('/slack/command', async (req: any, res) => {
+    let [command = '', ...params] = req.body.text.split(' ');
+
+    if (command.length && params.length === 0) {
+      // default to "ps4" command
+      params[0] = command;
+      command = 'ps4';
+    }
+
+    if (command === 'ps4') {
+      const game = (params[0] || '').toLowerCase();
+      if (config.games[game]) {
+        projector.turnOn();
+        await ps4.turnOn();
+        await ps4.startTitle(game);
+        await projectorScreen.down(req.knx);
+      } else {
+        res.send(`Game "${game}" was not found`);
+        return;
+      }
+    }
+
+    res.send(`Bleep Blob. Command "${command}" not recognized.`);
+  });
 
   app.post('/ps4', async (req, res) => {
     await ps4.turnOff();
