@@ -1,27 +1,22 @@
 import { PS4 } from '../devices/ps4';
 import { ProjectorScreen } from '../devices/projector-screen';
 import { Projector } from '../devices/projector';
+import { Connection } from 'knx';
 
 type GamesDictionary = {
   [key: string]: string;
 };
 
-export function gametime(
+export async function gametime(
   ps4: PS4,
   projectorScreen: ProjectorScreen,
   projector: Projector,
-  games: GamesDictionary
+  game: string,
+  knx: Connection
 ) {
-  return async (req, res) => {
-    console.log('gametime!');
-    const game = games[req.query.game] ? games[req.query.game] : games.FIFA19;
+  projector.turnOn();
 
-    projector.turnOn();
-
-    await ps4.turnOn();
-    await ps4.startTitle(game);
-    await projectorScreen.down(req.knx);
-
-    res.send('Game on!');
-  };
+  await ps4.turnOn();
+  await ps4.startTitle(game);
+  await projectorScreen.down(knx);
 }
