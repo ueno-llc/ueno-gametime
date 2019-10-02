@@ -9,8 +9,8 @@ type PS4AuthToken = {
 export class PS4 {
   // @ts-ignore
   _device: Device;
-  constructor(address: string, credentials: PS4AuthToken) {
-    this._device = new Device({ address, credentials });
+  constructor(credentials: PS4AuthToken, address?: string) {
+    this._device = new Device({ credentials, address });
   }
 
   async turnOn() {

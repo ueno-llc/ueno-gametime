@@ -8,9 +8,10 @@ import { gametime } from './commands/game-time';
 import { worktime } from './commands/work-time';
 
 const config = {
+  projectorSerialPath: '/dev/ttyS0',
   knxbus: '192.168.1.167',
   projectorScreenAddress: '0/3/6',
-  ps4Address: '192.168.1.70',
+  ps4Address: undefined,
   games: {
     fifa19: 'CUSA11599_0',
     fifa20: 'CUSA15545',
@@ -21,10 +22,6 @@ const config = {
     'auth-type': 'C',
     'user-credential': 'e1ffe9bff2cb1f3eec28d7868551d433877134dc7392b18e479b17eefddeb55b',
   },
-  apiUrl: 'http://192.168.1.x/',
-  screenPinUp: 2,
-  screenPinDown: 3,
-
   port: 5000,
 };
 
@@ -50,8 +47,8 @@ function initKnx(): Promise<knx.Connection> {
 
 async function init() {
   const projectorScreen = new ProjectorScreen(config.projectorScreenAddress);
-  const ps4 = new PS4(config.ps4Address, config.ps4AuthToken);
-  const projector = new Projector();
+  const ps4 = new PS4(config.ps4AuthToken, config.ps4Address);
+  const projector = new Projector(config.projectorSerialPath);
 
   const app = express();
   app.use(bodyParser.json());
@@ -59,20 +56,28 @@ async function init() {
 
   app.use(async (req, res, next) => {
     (req as any).knx = await initKnx();
-    const old = res.send;
-
-    // @ts-ignore
-    res.send = (body?: any) => {
-      (req as any).knx.Disconnect();
-
-      old.call(res, body);
-    };
 
     return next();
   });
 
-  app.post('/gametime', gametime(ps4, projectorScreen, projector, config.games));
-  app.post('/worktime', worktime(ps4, projector, projectorScreen));
+  app.post('/gametime', async (req: any, res) => {
+    const game = (req.query.game || '').toLowerCase();
+
+    if (!config.games[game]) {
+      return res.status(400).send({ success: false, error: `Game "${game}" not found!` });
+    }
+
+    await gametime(ps4, projectorScreen, projector, game, req.knx);
+
+    res.send({ success: true, time: 'gametime' });
+  });
+
+  app.post('/worktime', async (req: any, res) => {
+    await worktime(ps4, projector, projectorScreen, req.knx);
+
+    res.send({ success: true, time: 'worktime' });
+  });
+
   app.post('/slack/command', async (req: any, res) => {
     let [command = '', ...params] = req.body.text.split(' ');
 
@@ -85,14 +90,17 @@ async function init() {
     if (command === 'ps4') {
       const game = (params[0] || '').toLowerCase();
       if (config.games[game]) {
-        projector.turnOn();
-        await ps4.turnOn();
-        await ps4.startTitle(game);
-        await projectorScreen.down(req.knx);
+        await gametime(ps4, projectorScreen, projector, game, req.knx);
+
+        return res.send(`It's gametime!`);
       } else {
         res.send(`Game "${game}" was not found`);
         return;
       }
+    } else if (command === 'work') {
+      await worktime(ps4, projector, projectorScreen, req.knx);
+
+      return res.send("Its work o' clock!");
     }
 
     res.send(`Bleep Blob. Command "${command}" not recognized.`);
@@ -105,6 +113,14 @@ async function init() {
     await ps4.turnOn();
     await ps4.startTitle(req.query.game);
     res.send(await ps4.detect());
+  });
+
+  app.use(async (req: any, res, next) => {
+    if (req.knx) {
+      req.knx.Disconnect();
+    }
+
+    next();
   });
 
   app.listen(config.port);
