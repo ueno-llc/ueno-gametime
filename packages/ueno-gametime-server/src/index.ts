@@ -16,6 +16,7 @@ const config = {
     fifa19: 'CUSA11599_0',
     fifa20: 'CUSA15545',
     fifa: '',
+    rocket: 'CUSA01433',
   },
   ps4AuthToken: {
     'client-type': 'a',
